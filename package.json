@@ -1,0 +1,29 @@
+{
+  "name": "irc-speedrunning-bot",
+  "version": "0.1.0",
+  "description": "An IRC Bot for speedrunning (and possible more)",
+  "main": "app.js",
+  "dependencies": {
+    "fs": "^0.0.2",
+    "irc": "^0.3.12",
+    "irc-colors": "^1.2.0"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/maxleiter/IRCRacer"
+  },
+  "keywords": [
+    "IRC",
+    "speedrunning",
+    "bot"
+  ],
+  "author": "MaxLeiter",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/maxleiter/IRCRacer/issues"
+  }
+}
