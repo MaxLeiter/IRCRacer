@@ -4,6 +4,7 @@ var config = require('./config');
 var c = require('irc-colors');
 //Server, Nick, Password, Channel
 var commands = ['.help', '.create', '.join', '.leave', '.done', '.end', '.races', '.start', '.ready', '.unready', '.setgoal', '.goal', '.owner', '.entrants', '.racers', '.reset'];
+var opCommands = ['.kick', '.ban'];
 var races = [];
 var games = [];
 var ops = [];
@@ -143,7 +144,6 @@ client.addListener('message', function (from, to, message) {
 } else if (message == commands[3]) {
 	if(to !== config.mainChannel) {
 			//find the race in races, then find the player in race.players and splice them.
-
 			var playerLocInArray = find_in_array(race.players, 'player', from);
 			race.players.splice(playerLocInArray, 1);
 			client.say(to, from + " has left the game!");
@@ -165,11 +165,24 @@ client.addListener('message', function (from, to, message) {
 	} else {
 		client.say(to, from + ': you must be in the race to be done!');
 	}
+
+	if(race.players.every(isDone)) {
+		if(from == race.raceOwner || isOp(from)) {
+			race.inProgress = false;
+			race.players = sortByKey(race.players, 'time');
+			client.say(to, 'The race is now complete! The winner is ' + race.players[0].player + ' with a time of ' + msToTime(race.players[0].time.toString()));
+		}
+	}
+
+	function isDone(element, index, array) {
+		return element.done;
+	}
     //end
 } else if (message == commands[5]) {
 	if(from == race.raceOwner || isOp(from)) {
 		race.inProgress = false;
-		client.say(to, 'The race is now complete! The winner is ');
+		race.players = sortByKey(race.players, 'time');
+		client.say(to, 'The race is now complete! The winner is ' + race.players[0].player + ' with a time of ' + msToTime(race.players[0].time.toString()));
 	}
     //races
 } else if (message == commands[6]) {
@@ -242,15 +255,15 @@ client.addListener('message', function (from, to, message) {
    //entrants or racers
 } else if (message == commands[13] || message == commands[14]) {
 	//make sure we're not in the main channel
-	if(to != config.mainChannel && race.inProgress) {
+	if(to != config.mainChannel) {
 		var finishedRacers = [];
 		var runningRacers = [];
-		var cachedTime = Date.now();
+		
 		race.players.forEach(function(e, i, a) {
 			if(e.done == true) {
-				finishedRacers.push(e.player + ' is done! Their time was ' + msToTime(e.time));
+				finishedRacers.push(e.player + ' is done! Their time was ' + msToTime(race.startTime.toString()));
 			}  else {
-				runningRacers.push(e.player + 'is still running! Their current time is ' + msToTime(cachedTime - e.time));
+				runningRacers.push(e.player + 'is still running! Their current time is ' + msToTime((Date.now() - race.startTime).toString()));
 			}
 		});
 		
@@ -264,12 +277,31 @@ client.addListener('message', function (from, to, message) {
 	} else {
 		client.say(to, 'You must be in a racing channel to do this!');
 	}
+   //reset
+} else if(message == commands[15]) {
+	//Just clean the players
+	race.players = [];
+	race.startTime = 0;
+	client.say(client, 'The race has been reset! Be sure to .join and .ready again!');
+ //kick 
+} else if (splitMessage.indexOf(opCommands[0]) > -1 && to !== config.mainChannel && (isOp(from) == true || from == race.raceOwner) ) {
+	if(splitMessage.length == 2) {
+		var playerLocInArray = find_in_array(race.players, 'player', splitMessage[1]);
+		if(typeof playerLocInArray == 'number') {
+			race.players.splice(playerLocInArray, 1);
+		}
+	} else {
+		client.say(to, from + ': you had either too many or too few arguments');
+	}
 }
+//A debug command for printing out the races; to be removed in final versions (maybe just OPs?)
 else if (message == '.print') {
 	client.say(to, JSON.stringify(races));
 }
 });
 
+//For finding a key in an array, used for the multiple playerLocInArray
+//TODO: make only one playerLocInArray
 function find_in_array(arr, name, value) {
 	for (var i = 0, len = arr.length; i<len; i++) {
 		if (name in arr[i] && arr[i][name] == value) return i;
@@ -277,6 +309,7 @@ function find_in_array(arr, name, value) {
 	return false;
 }
 
+//Check if a user (by their nick) is a bot-OP (in ops.txt)
 function isOp(name) {
 	//They're an OP
 	if(ops.indexOf(name) > -1) {
@@ -286,6 +319,9 @@ function isOp(name) {
 	}
 }
 
+//To start the race; used for the 'start' command. Previously had a callback() for the time, 
+//but now the time is handled by the 'race' array. If the timer is 2 I apologize, I set it low for testing
+// and don't wish to set a bool to change it atm.
 function startRace(client, channel) {
 	var seconds;
 	var timer = 2;
@@ -301,11 +337,14 @@ function startRace(client, channel) {
 	}, 1000);
 }
 
+//For NickServ registration, as NickServ will identify the bot before it tries to join the channel.
+//TODO: fix this
 function sleep(delay) {
 	var start = new Date().getTime();
 	while (new Date().getTime() < start + delay);
 }
 
+//for converting Date.now() into minutes
 function msToTime(s) {
 
 	function addZ(n) {
@@ -320,4 +359,14 @@ function msToTime(s) {
 	var hrs = (s - mins) / 60;
 
 	return addZ(hrs) + ':' + addZ(mins) + ':' + addZ(secs) + '.' + ms;
+}
+
+//players: [player: string, ready: bool, time: int, done: bool]
+//for finding the winner
+//thanks stackoverflow!
+function sortByKey(array, key) {
+    return array.sort(function(a, b) {
+        var x = a[key]; var y = b[key];
+        return ((x < y) ? -1 : ((x > y) ? 1 : 0));
+    });
 }
