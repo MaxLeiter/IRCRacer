@@ -2,12 +2,17 @@ var irc = require('irc');
 var fs = require('fs');
 var config = require('./config');
 var c = require('irc-colors');
+
+
+
 //Server, Nick, Password, Channel
-var commands = ['.help', '.create', '.join', '.leave', '.done', '.end', '.races', '.start', '.ready', '.unready', '.setgoal', '.goal', '.owner', '.entrants', '.racers', '.reset'];
-var opCommands = ['.kick', '.ban'];
+var commands = ['.help', '.create', '.join', '.unjoin', '.done', '.stop', '.races', '.start', '.ready', '.unready', '.setgoal', '.goal', '.owner', '.entrants', '.racers', '.reset', '.ops', '.forfeit'];
+var opCommands = ['.kick', '.record'];
 var races = [];
 var games = [];
 var ops = [];
+var records = [];
+var completed = [];
 var index = 0;
 var client = new irc.Client(config.server, config.nick, {
 	autoConnect: false,
@@ -52,9 +57,27 @@ client.addListener('error', function(message) {
 	console.log('error: ', message);
 });
 
+//completed: array
+function addToRecords(completed) {
+	var finishedPlayers = JSON.stringify(completed);
+	var	buffer = new Buffer(finishedPlayers);
+	var path = 'private/records.json';
+	fs.open(path, 'w', function(err, fd) {
+		if (err) {
+			throw 'error opening file: ' + err;
+		}
+		fs.write(fd, buffer, 0, buffer.length, null, function(err) {
+			if (err) throw 'error writing file: ' + err;
+			fs.close(fd, function() {
+				console.log('Saved records');
+			})
+		});
+	});
+}
+
 function saveIndex() {
 	var	buffer = new Buffer(index.toString());
-	var path = "public/index.txt";
+	var path = "private/index.txt";
 
 	fs.open(path, 'w', function(err, fd) {
 		if (err) {
@@ -70,7 +93,7 @@ function saveIndex() {
 }
 
 function readIndex(callback) {
-	var path = "public/index.txt";
+	var path = "private/index.txt";
 	var content;
 	fs.readFile(path, function read(err, data) {
 		if (err) {
@@ -81,13 +104,13 @@ function readIndex(callback) {
 		if(typeof parseInt(content.toString()) !== 'NaN'){
 			callback(data);
 		} else {
-			console.log('Please add a 0 to index.txt in /public/');
+			console.log('Please add a 0 to index.txt in /private/');
 		}
 	});
 }
 
 function readOPs(callback) {
-	var path = "public/ops.txt";
+	var path = "private/ops.txt";
 	var content;
 	fs.readFile(path, function read(err, data) {
 		if (err) {
@@ -128,8 +151,8 @@ client.addListener('message', function (from, to, message) {
     //help
 } else if (message == commands[0]){
 	client.say(to, from + ': this is a WIP speed running bot.');
-    //join
-} else if (message == commands[2]) {
+    //join; check to be sure the race isn't in progress
+} else if (message == commands[2] && !race.inProgress) {
     	//If the message is in the home channel don't send
     	if(to !== config.mainChannel) {
     		race.players.push({ player: from,
@@ -140,7 +163,7 @@ client.addListener('message', function (from, to, message) {
     	} else {
     		client.say(to, 'You cannot join a game in the home channel, ' + from + '!');
     	} 
-    //leave
+    //unjoin
 } else if (message == commands[3]) {
 	if(to !== config.mainChannel) {
 			//find the race in races, then find the player in race.players and splice them.
@@ -161,28 +184,33 @@ client.addListener('message', function (from, to, message) {
 		race.players[playerLocInArray].time = finalTime;
 		race.players[playerLocInArray].done = true;
 		client.say(to, from + ' is now done with a time of ' + msToTime(finalTime.toString()));
+		//Store the finishde players
+		var player = race.players[playerLocInArray];
+		console.log(player.player);
+		completed.push({name: player.player, game: race.raceGame, time: player.time});
 
+		addToRecords(completed);
 	} else {
 		client.say(to, from + ': you must be in the race to be done!');
 	}
 
 	if(race.players.every(isDone)) {
-		if(from == race.raceOwner || isOp(from)) {
-			race.inProgress = false;
-			race.players = sortByKey(race.players, 'time');
-			client.say(to, 'The race is now complete! The winner is ' + race.players[0].player + ' with a time of ' + msToTime(race.players[0].time.toString()));
-		}
+		race.inProgress = false;
+		race.players = sortByKey(race.players, 'time');
+		client.say(to, 'The race is now complete! The winner is ' + race.players[0].player + ' with a time of ' + msToTime(race.players[0].time).toString());
 	}
 
 	function isDone(element, index, array) {
 		return element.done;
 	}
-    //end
+    //stop
 } else if (message == commands[5]) {
-	if(from == race.raceOwner || isOp(from)) {
+	if((from == race.raceOwner || isOp(from)) && race.inProgess) {
 		race.inProgress = false;
 		race.players = sortByKey(race.players, 'time');
-		client.say(to, 'The race is now complete! The winner is ' + race.players[0].player + ' with a time of ' + msToTime(race.players[0].time.toString()));
+		client.say(to, 'The race is now complete! The winner is ' + race.players[0].player + ' with a time of ' + msToTime(race.players[0].time).toString());
+	} else {
+		client.say(to, from + ': the race is not in progress!');
 	}
     //races
 } else if (message == commands[6]) {
@@ -197,7 +225,7 @@ client.addListener('message', function (from, to, message) {
 	}
     //start
 } else if (message == commands[7]) {
-	if(from == race.raceOwner) {
+	if(from == race.raceOwner && race.players.length !== 0) {
 		function isReady(element, index, array) {
 			return element.ready;
 		}
@@ -212,22 +240,23 @@ client.addListener('message', function (from, to, message) {
 
 		}
 	} else {
-		client.say(to, from + ', you are not the race owner!');
+		client.say(to, from + ', you are either not the race owner, or no playes have joined!');
 	}
     //ready
 } else if (message == commands[8]) {
-	var playerLocInArray = find_in_array(race.players, 'player', from);
 
-	var playerReady = race.players.filter(function(e){return (e === race.players[playerLocInArray].player)}).length > 0
-	if(!playerReady) {
-		race.players[playerLocInArray].ready = true;
-		client.say(to, from + ' is now ready!'); 
+	var playerLocInArray = find_in_array(race.players, 'player', from);
+	if(typeof playerLocInArray != 'boolean') {
+		var playerReady = race.players.filter(function(e){return (e === race.players[playerLocInArray].player)}).length > 0
+		if(!playerReady) {
+			race.players[playerLocInArray].ready = true;
+			client.say(to, from + ' is now ready!'); 
     		//they never joined, so lets do that for them!
     	} else {
     		client.say(to, from + ' you must join the game to ready up'); 
 
     	}
-
+    }
    	 //unready
    	} else if (message == commands[9]) {
    		var playerLocInArray = find_in_array(race.players, 'player', from);
@@ -261,9 +290,9 @@ client.addListener('message', function (from, to, message) {
 		
 		race.players.forEach(function(e, i, a) {
 			if(e.done == true) {
-				finishedRacers.push(e.player + ' is done! Their time was ' + msToTime(race.startTime.toString()));
+				finishedRacers.push(e.player + ' is done! Their time was ' + msToTime(race.startTime));
 			}  else {
-				runningRacers.push(e.player + 'is still running! Their current time is ' + msToTime((Date.now() - race.startTime).toString()));
+				runningRacers.push(e.player + 'is still running! Their current time is ' + msToTime((Date.now() - race.startTime)));
 			}
 		});
 		
@@ -282,21 +311,36 @@ client.addListener('message', function (from, to, message) {
 	//Just clean the players
 	race.players = [];
 	race.startTime = 0;
-	client.say(client, 'The race has been reset! Be sure to .join and .ready again!');
+	client.say(to, 'The race has been reset! Be sure to .join and .ready again!');
  //kick 
 } else if (splitMessage.indexOf(opCommands[0]) > -1 && to !== config.mainChannel && (isOp(from) == true || from == race.raceOwner) ) {
-	if(splitMessage.length == 2) {
-		var playerLocInArray = find_in_array(race.players, 'player', splitMessage[1]);
-		if(typeof playerLocInArray == 'number') {
-			race.players.splice(playerLocInArray, 1);
-		}
+	
+	var playerLocInArray = find_in_array(race.players, 'player', splitMessage[1]);
+	if(typeof playerLocInArray == 'number') {
+		race.players.splice(playerLocInArray, 1);
+		client.say(to, from + " has kicked " + playerLocInArray.player);
 	} else {
 		client.say(to, from + ': you had either too many or too few arguments');
+	}
+  //ops
+} else if (message == commands[16]) {
+	client.say(to, 'The current OPs are: ');
+	ops.forEach(function(e, i, a) {
+		client.say(to, JSON.stringify(e));
+	});
+  //forfeit
+}  else if (message == commands[17]) {
+	var playerLocInArray = find_in_array(race.players, 'player', from);
+	if(typeof playerLocInArray == 'number') {
+		race.players.splice(playerLocInArray, 1);
+		client.say(to, from + ' has forfeited the race!');
+	} else {
+		client.say(to, from + ': something went wrong');
 	}
 }
 //A debug command for printing out the races; to be removed in final versions (maybe just OPs?)
 else if (message == '.print') {
-	client.say(to, JSON.stringify(races));
+	client.say(to, JSON.stringify(race.players));
 }
 });
 
@@ -365,8 +409,17 @@ function msToTime(s) {
 //for finding the winner
 //thanks stackoverflow!
 function sortByKey(array, key) {
-    return array.sort(function(a, b) {
-        var x = a[key]; var y = b[key];
-        return ((x < y) ? -1 : ((x > y) ? 1 : 0));
-    });
+	return array.sort(function(a, b) {
+		var x = a[key]; var y = b[key];
+		return ((x < y) ? -1 : ((x > y) ? 1 : 0));
+	});
 }
+
+//Analytics
+function md5(data) 
+{ 
+	var md5_msg = cryptoMD5(data); 
+	var md5_hex = cryptoJS.enc.Hex.stringify(md5_msg); 
+
+	return md5_hex; 
+};

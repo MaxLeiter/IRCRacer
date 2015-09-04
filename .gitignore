@@ -30,6 +30,8 @@ node_modules
 .directory
 
 #IRCRacer
-public/index.txt
-public/ops.txt
+private/index.txt
+private/ops.txt
 config.js
+private/mongo
+_site/
