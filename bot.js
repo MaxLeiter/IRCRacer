@@ -6,7 +6,7 @@ var c = require('irc-colors');
 
 
 //Server, Nick, Password, Channel
-var commands = ['.help', '.create', '.join', '.unjoin', '.done', '.stop', '.races', '.start', '.ready', '.unready', '.setgoal', '.goal', '.owner', '.entrants', '.racers', '.reset', '.ops', '.forfeit'];
+var commands = ['.help', '.startrace', '.join', '.unjoin', '.done', '.stop', '.races', '.start', '.ready', '.unready', '.setgoal', '.goal', '.owner', '.entrants', '.racers', '.reset', '.ops', '.forfeit', '.forcestart'];
 var opCommands = ['.kick', '.record'];
 var races = [];
 var games = [];
@@ -337,6 +337,18 @@ client.addListener('message', function (from, to, message) {
 	} else {
 		client.say(to, from + ': something went wrong');
 	}
+   //forcestart
+} else if (message == commands[18] && (from == race.raceOwner || from == isOp(from))) {
+	race.players.forEach(function(e, i, a) {
+		if(!e.ready) {
+			race.players.splice(playerLocInArray, 1);
+		}
+	});
+	client.say(to, from + ": has force-start a race; unready players have been kicked!");
+	race.inProgress = true;
+
+	startRace(client, race.name);
+	race.startTime = Date.now();	
 }
 //A debug command for printing out the races; to be removed in final versions (maybe just OPs?)
 else if (message == '.print') {
