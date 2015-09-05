@@ -7,7 +7,7 @@ var c = require('irc-colors');
 
 //Server, Nick, Password, Channel
 var commands = ['.help', '.startrace', '.join', '.unjoin', '.done', '.stop', '.races', '.start', '.ready', '.unready', '.setgoal', '.goal', '.owner', '.entrants', '.racers', '.reset', '.ops', '.forfeit', '.forcestart'];
-var opCommands = ['.kick', '.record'];
+var opCommands = ['.kick'];
 var races = [];
 var games = [];
 var ops = [];
@@ -218,7 +218,7 @@ client.addListener('message', function (from, to, message) {
 		client.say(to, 'The current races are: ');
 		for(var i=0; i < races.length; i++) {
 			console.log(races, races[i].name);
-			client.say(from, 'Name: ' + races[i].name.toString() + ', goal: ' + races[i].goal.toString());
+			client.say(to, 'Name: ' + races[i].name.toString() + ', goal: ' + races[i].goal.toString());
 		}
 	} else {
 		client.say(from, 'No current races!');
