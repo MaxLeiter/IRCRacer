@@ -240,7 +240,7 @@ client.addListener('message', function (from, to, message) {
 
 		}
 	} else {
-		client.say(to, from + ', you are either not the race owner, or no playes have joined!');
+		client.say(to, from + ', you are either not the race owner, or no players have joined!');
 	}
     //ready
 } else if (message == commands[8]) {

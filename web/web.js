@@ -1,17 +1,18 @@
+  var timeOutId = 0;
+  function ajaxFunction() {
+      $.ajax({
+        url: '../private/records.json', 
+        success: function(data, textStatus, jqXHR) {
+            setupTables(data);
+            timeOutId = setTimeout(ajaxFunction, 2000);
+        }
+    });
+  }
+  ajaxFunction();
+  var rank = [];
+  var tables;
 
-
-
-$.ajax({
-    url: '../private/records.json', 
-    success: function(data, textStatus, jqXHR) {
-        setupTables(data);
-    }
-});
-
-var rank = [];
-var tables;
-
-function addToRankList(name, time) {
+  function addToRankList(name, time) {
     rank.push({name: name, time: time});
 }
 
@@ -42,23 +43,35 @@ if (a.time > b.time)
 return 0;
 }
 
+var parent = $('.container');
 
 function setupTables(data) {
     setTables(data);
     for (var table in tables) {
-       var tableLoc = find_in_array(data, 'game', table);
-       drawTable(table);
-       data.forEach(function(e, i, a) {
-           var playerLoc = find_in_array(data, 'name', e.name);
-           if(data[playerLoc].game.toString() == table) {
-            drawRow(table, data[playerLoc]);
-        }
-    });
-
-   }
+     var $table = $('#' + table);
+     if($table.length == 0) {
+        setupTable(data, table);
+     } else {
+        tables = {};
+        $table.remove();
+        var $tableName = $('.text-center');
+        $tableName.remove();
+        setupTable(data, table);
+    }
+}
+}
+function setupTable(data, table) {
+         var tableLoc = find_in_array(data, 'game', table);
+         drawTable(table);
+         data.forEach(function(e, i, a) {
+             var playerLoc = find_in_array(data, 'game', e.game);
+             if(data[playerLoc].game.toString() == table) {
+                drawRow(table, data[playerLoc]);
+            }
+        });
 }
 
-var parent = $('.container');
+
 function drawTable(tableData) {
     var $table = $("<table id=" + tableData + "> </table>");
     parent.append($table);
