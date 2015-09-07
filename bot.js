@@ -6,7 +6,7 @@ var c = require('irc-colors');
 
 
 //Server, Nick, Password, Channel
-var commands = ['.help', '.startrace', '.join', '.unjoin', '.done', '.stop', '.races', '.start', '.ready', '.unready', '.setgoal', '.goal', '.owner', '.entrants', '.racers', '.reset', '.ops', '.forfeit', '.forcestart'];
+var commands = ['.help', '.startrace', '.join', '.unjoin', '.done', '.stop', '.races', '.start', '.ready', '.unready', '.setgoal', '.goal', '.owner', '.entrants', '.racers', '.reset', '.ops', '.forfeit', '.forcestart', '.comment'];
 var opCommands = ['.kick'];
 var races = [];
 var games = [];
@@ -131,7 +131,7 @@ client.addListener('message', function (from, to, message) {
     var goal;
     var id = find_in_array(races, 'name', to);
     var race = races[id];
-    if(to == config.mainChannel && message.substring(0, createCommand.length) == createCommand && splitMessage.length == 2 && message.indexOf(createCommand) !== -1) {
+    if(to == config.mainChannel && message.substring(0, createCommand.length).toUpperCase() == createCommand.toUpperCase() && splitMessage.length == 2 && message.indexOf(createCommand) !== -1) {
     	console.log(from + ' has created a lobby!');
     	var game = splitMessage[1];
     	var race = { name: '#' + config.nick + index,
@@ -149,22 +149,23 @@ client.addListener('message', function (from, to, message) {
     } else if(message.indexOf(createCommand) !== -1  && to != config.mainChannel) {
     	client.say(from, c.red(owner + ': You messed up! Either you had too many arguments or used the command incorrectly. Correct usage: .create <game>'));
     //help
-} else if (message == commands[0]){
+} else if (message.toUpperCase() == commands[0].toUpperCase()){
 	client.say(to, from + ': this is a WIP speed running bot.');
     //join; check to be sure the race isn't in progress
-} else if (message == commands[2] && !race.inProgress) {
+} else if (message.toUpperCase() == commands[2].toUpperCase() && !race.inProgress) {
     	//If the message is in the home channel don't send
     	if(to !== config.mainChannel) {
     		race.players.push({ player: from,
     			ready: false,
     			time: 0,
-    			done: false });
+    			done: false,
+    			comment: ''});
     		client.say(to, from + " has joined the game! Type .ready to set your status!");
     	} else {
     		client.say(to, 'You cannot join a game in the home channel, ' + from + '!');
     	} 
     //unjoin
-} else if (message == commands[3]) {
+} else if (message.toUpperCase() == commands[3].toUpperCase()) {
 	if(to !== config.mainChannel) {
 			//find the race in races, then find the player in race.players and splice them.
 			var playerLocInArray = find_in_array(race.players, 'player', from);
@@ -174,7 +175,7 @@ client.addListener('message', function (from, to, message) {
 			client.say(to, 'You cannot leave a game in the home channel, ' + from + '!');
 		}
     //done
-} else if (message == commands[4]) {
+} else if (message.toUpperCase() == commands[4].toUpperCase()) {
 	var playerLocInArray = find_in_array(race.players, 'player', from);
 	var playerReady = race.players.filter(function(e){return (e === race.players[playerLocInArray].player)}).length > 0
 	//If they're in the race
@@ -186,7 +187,6 @@ client.addListener('message', function (from, to, message) {
 		client.say(to, from + ' is now done with a time of ' + msToTime(finalTime.toString()));
 		//Store the finishde players
 		var player = race.players[playerLocInArray];
-		console.log(player.player);
 		completed.push({name: player.player, game: race.raceGame, time: player.time});
 
 		addToRecords(completed);
@@ -198,13 +198,16 @@ client.addListener('message', function (from, to, message) {
 		race.inProgress = false;
 		race.players = sortByKey(race.players, 'time');
 		client.say(to, 'The race is now complete! The winner is ' + race.players[0].player + ' with a time of ' + msToTime(race.players[0].time).toString());
+		client.say(config.mainChannel, c.green('The race ' + race.raceGame + ' in channel ' + to + ' has finished!'));
+		client.say(config.mainChannel, 'The winner was ' + race.players[0].player + ' with a time of ' + msToTime(race.players[0].time).toString());
+
 	}
 
 	function isDone(element, index, array) {
 		return element.done;
 	}
     //stop
-} else if (message == commands[5]) {
+} else if (message.toUpperCase() == commands[5].toUpperCase()) {
 	if((from == race.raceOwner || isOp(from)) && race.inProgess) {
 		race.inProgress = false;
 		race.players = sortByKey(race.players, 'time');
@@ -213,7 +216,7 @@ client.addListener('message', function (from, to, message) {
 		client.say(to, from + ': the race is not in progress!');
 	}
     //races
-} else if (message == commands[6]) {
+} else if (message.toUpperCase() == commands[6].toUpperCase()) {
 	if (races.length > 0) {
 		client.say(to, 'The current races are: ');
 		for(var i=0; i < races.length; i++) {
@@ -224,7 +227,7 @@ client.addListener('message', function (from, to, message) {
 		client.say(from, 'No current races!');
 	}
     //start
-} else if (message == commands[7]) {
+} else if (message.toUpperCase() == commands[7].toUpperCase()) {
 	if(from == race.raceOwner && race.players.length !== 0) {
 		function isReady(element, index, array) {
 			return element.ready;
@@ -234,7 +237,8 @@ client.addListener('message', function (from, to, message) {
 			client.say(to, 'All players are ready! Starting in 10 seconds!');
 			race.inProgress = true;
 			startRace(client, race.name);
-			race.startTime = Date.now();			
+			race.startTime = Date.now();
+			client.say(config.mainChannel, 'The race ' + race.raceGame + ' in channel ' + to + ' has begun!');			
 		} else {
 			client.say(to, 'Not all players are ready! Cannot start!');
 
@@ -243,7 +247,7 @@ client.addListener('message', function (from, to, message) {
 		client.say(to, from + ', you are either not the race owner, or no players have joined!');
 	}
     //ready
-} else if (message == commands[8]) {
+} else if (message.toUpperCase() == commands[8].toUpperCase()) {
 
 	var playerLocInArray = find_in_array(race.players, 'player', from);
 	if(typeof playerLocInArray != 'boolean') {
@@ -258,7 +262,7 @@ client.addListener('message', function (from, to, message) {
     	}
     }
    	 //unready
-   	} else if (message == commands[9]) {
+   	} else if (message.toUpperCase() == commands[9].toUpperCase()) {
    		var playerLocInArray = find_in_array(race.players, 'player', from);
    		race.players[playerLocInArray].ready = false;
    		client.say(to, from + ' is no longer ready');
@@ -272,17 +276,17 @@ client.addListener('message', function (from, to, message) {
  		client.say(to, from + ': you must be the owner to change the goal.');
  	}
      //goal
- } else if (message == commands[11]) {
+ } else if (message.toUpperCase() == commands[11].toUpperCase()) {
  	client.say(to, from + ": the current goal is '" + race.goal + "'");
     //owner
-}  else if (message == commands[12]) {
+}  else if (message.toUpperCase() == commands[12].toUpperCase()) {
 	if(to == config.mainChannel) {
 		client.say(config.mainChannel, 'I am the supreme ruler!');
 	} else {
 		client.say(to, 'The owner of this race is ' + race.gameOwner);
 	}
    //entrants or racers
-} else if (message == commands[13] || message == commands[14]) {
+} else if (message.toUpperCase() == commands[13].toUpperCase() || message.toUpperCase() == commands[14].toUpperCase()) {
 	//make sure we're not in the main channel
 	if(to != config.mainChannel) {
 		var finishedRacers = [];
@@ -290,9 +294,9 @@ client.addListener('message', function (from, to, message) {
 		
 		race.players.forEach(function(e, i, a) {
 			if(e.done == true) {
-				finishedRacers.push(e.player + ' is done! Their time was ' + msToTime(race.startTime));
+				finishedRacers.push(e.player + ' is done! Their time was ' + msToTime(e.time)  + ' and their comment is: ' + e.comment);
 			}  else {
-				runningRacers.push(e.player + 'is still running! Their current time is ' + msToTime((Date.now() - race.startTime)));
+				runningRacers.push(e.player + 'is still running! Their current time is ' + msToTime((Date.now() - race.startTime)) + ' and their comment is: ' + e.comment);
 			}
 		});
 		
@@ -307,7 +311,7 @@ client.addListener('message', function (from, to, message) {
 		client.say(to, 'You must be in a racing channel to do this!');
 	}
    //reset
-} else if(message == commands[15]) {
+} else if(message.toUpperCase() == commands[15].toUpperCase()) {
 	//Just clean the players
 	race.players = [];
 	race.startTime = 0;
@@ -323,13 +327,13 @@ client.addListener('message', function (from, to, message) {
 		client.say(to, from + ': you had either too many or too few arguments');
 	}
   //ops
-} else if (message == commands[16]) {
+} else if (message.toUpperCase() == commands[16].toUpperCase()) {
 	client.say(to, 'The current OPs are: ');
 	ops.forEach(function(e, i, a) {
 		client.say(to, JSON.stringify(e));
 	});
   //forfeit
-}  else if (message == commands[17]) {
+}  else if (message.toUpperCase() == commands[17].toUpperCase()) {
 	var playerLocInArray = find_in_array(race.players, 'player', from);
 	if(typeof playerLocInArray == 'number') {
 		race.players.splice(playerLocInArray, 1);
@@ -338,7 +342,7 @@ client.addListener('message', function (from, to, message) {
 		client.say(to, from + ': something went wrong');
 	}
    //forcestart
-} else if (message == commands[18] && (from == race.raceOwner || from == isOp(from))) {
+} else if (message.toUpperCase() == commands[18].toUpperCase() && (from == race.raceOwner || from == isOp(from))) {
 	race.players.forEach(function(e, i, a) {
 		if(!e.ready) {
 			race.players.splice(playerLocInArray, 1);
@@ -349,6 +353,11 @@ client.addListener('message', function (from, to, message) {
 
 	startRace(client, race.name);
 	race.startTime = Date.now();	
+   //comment
+}  else if (splitMessage.indexOf(commands[19]) > -1 && to !== config.mainChannel && race.startTime > 0) {
+	var playerLocInArray = find_in_array(race.players, 'player', from);
+	var commentString = splitMessage.splice(1, splitMessage.length).join(' ') + " ";
+	race.players[playerLocInArray].comment = commentString;
 }
 //A debug command for printing out the races; to be removed in final versions (maybe just OPs?)
 else if (message == '.print') {
