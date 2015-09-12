@@ -155,7 +155,7 @@ client.addListener('message', function (from, to, message) {
     	client.say(from, c.red(owner + ': You messed up! Either you had too many arguments or used the command incorrectly. Correct usage: .create <game>'));
     //help
 } else if (message.toUpperCase() == commands[0].toUpperCase()){
-	client.say(to, from + ': this is a WIP speed running bot.');
+	client.say(to, from + ': this is a WIP speed running bot. Commands can be found here: https://github.com/MaxLeiter/IRCRacer/COMMANDS.MD');
     //join; check to be sure the race isn't in progress
 } else if (message.toUpperCase() == commands[2].toUpperCase() && !race.inProgress) {
     	//If the message is in the home channel don't send
@@ -196,11 +196,15 @@ client.addListener('message', function (from, to, message) {
 			race.players[playerLocInArray].time = finalTime;
 			race.players[playerLocInArray].done = true;
 			client.say(to, from + ' is now done with a time of ' + msToTime(finalTime.toString()));
-			//Store the finishde players
+			//Store the finished players
 			var player = race.players[playerLocInArray];
 			completed.push({name: player.player, game: race.raceGame, time: player.time});
-
 			addToRecords(completed);
+			var finishedRace = find_in_array(races, 'name', to);
+			if(typeof finishedRace == 'number') {
+				races.splice(finishedRace, 1);
+			}
+
 		} else {
 			client.say(to, from + ': you must be in the race to be done!');
 		}
