@@ -32,6 +32,7 @@ node_modules
 #IRCRacer
 private/index.txt
 private/ops.txt
+private/records.json
 config.js
 private/mongo
 _site/
