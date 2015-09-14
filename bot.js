@@ -123,6 +123,28 @@ function readOPs(callback) {
 	});
 }
 
+
+client.on('part', function (channel, nick, reason, message) {
+	client.say(config.mainChannel, channel + '   ' + nick);
+		var id = find_in_array(races, 'name', channel);
+		var race = races[id];
+		var playerLocInArray = null;
+		console.log(race);
+		//If its a race
+		if(race !== undefined) {
+			//If there are players
+			if(typeof race.players != 'undefined' && race.players instanceof Array) {
+				console.log(race.players);
+				playerLocInArray = find_in_array(race.players, 'player', nick);
+				//If its not the main channel and the channel is a race channel; redundant?
+				if(race.name != config.mainChannel && channel.indexOf('#' + config.nick) > -1) {
+					client.say(channel, race.players[playerLocInArray].player + ' has been removed from the race');
+					race.players.splice(playerLocInArray, 1);
+				}
+			} 
+		}
+
+});
 client.addListener('message', function (from, to, message) {
 	console.log(from + ' => ' + to + ': ' + message);
     //Create command; see if it starts with the command; see if its two words
@@ -135,17 +157,17 @@ client.addListener('message', function (from, to, message) {
 
     var playerLocInArray = null;
     if(race !== undefined) {
-   		if(typeof race.players != 'undefined' && race.players instanceof Array) {
+    	if(typeof race.players != 'undefined' && race.players instanceof Array) {
     		playerLocInArray = find_in_array(race.players, 'player', from);
     	} 
-	}
+    }
     if(to == config.mainChannel && message.substring(0, createCommand.length).toUpperCase() == createCommand.toUpperCase() && splitMessage.length == 2 && message.indexOf(createCommand) !== -1) {
     	var game = splitMessage[1];
     	var race = { name: '#' + config.nick + index,
     	raceGame: game, players: [], raceOwner: owner, startTime: 0, goal: '', inProgress: false };
     	client.join(race.name);
-    	//TODO: this doesn't work
-    	client.say(race.name, '/topic ' + owner + "'s " + game + ' lobby! Type .join to participate');
+    	//topic
+    	client.send('TOPIC', race.name, owner + "'s " + game + ' lobby! Type .join to participate');
     	client.say(config.mainChannel, c.green(owner + ' has created a lobby for ' + game + '! To join the lobby, please go to this race: ' + race.name + ' and type .join'));
     	races.push(race);
     	saveIndex();
@@ -157,15 +179,16 @@ client.addListener('message', function (from, to, message) {
 } else if (message.toUpperCase() == commands[0].toUpperCase()){
 	client.say(to, from + ': this is a WIP speed running bot. Commands can be found here: https://github.com/MaxLeiter/IRCRacer/COMMANDS.MD');
     //join; check to be sure the race isn't in progress
-} else if (message.toUpperCase() == commands[2].toUpperCase() && !race.inProgress) {
+} else if (message.toUpperCase() == commands[2].toUpperCase() && to !== config.mainChannel) {
     	//If the message is in the home channel don't send
-    	if(to !== config.mainChannel) {
+    	if(!race.inProgress) {			
     		//If they aren't already in the race
     		if(typeof playerLocInArray !== 'number') {
     			race.players.push({ player: from,
     				ready: false,
     				time: 0,
     				done: false,
+    				forfeit: false,
     				comment: ''});
     			client.say(to, from + " has joined the game! Type .ready to set your status!");
     		} else {
@@ -188,11 +211,11 @@ client.addListener('message', function (from, to, message) {
 		}
     //done
 } else if (message.toUpperCase() == commands[4].toUpperCase()) {
-	if(typeof playerLocInArray == 'number') {
-		var playerReady = race.players.filter(function(e){return (e === race.players[playerLocInArray].player)}).length > 0;
+	
+	var playerReady = race.players.filter(function(e){return (e === race.players[playerLocInArray].player)}).length > 0;
 		//If they're in the race
 		if(!playerReady && race.players[playerLocInArray].done != true) {
-			var finalTime = Date.now() - race.startTime;
+			var finalTime = Date.now() - race.startTime - 10000;
 			race.players[playerLocInArray].time = finalTime;
 			race.players[playerLocInArray].done = true;
 			client.say(to, from + ' is now done with a time of ' + msToTime(finalTime.toString()));
@@ -200,30 +223,29 @@ client.addListener('message', function (from, to, message) {
 			var player = race.players[playerLocInArray];
 			completed.push({name: player.player, game: race.raceGame, time: player.time});
 			addToRecords(completed);
-			var finishedRace = find_in_array(races, 'name', to);
-			if(typeof finishedRace == 'number') {
-				races.splice(finishedRace, 1);
-			}
-
+			saveRace(races);
 		} else {
 			client.say(to, from + ': you must be in the race to be done!');
 		}
 
-		if(race.players.every(isDone)) {
+		if(race.players.every(isDoneOrForfeited)) {
 			race.inProgress = false;
 			race.players = sortByKey(race.players, 'time');
 			client.say(to, 'The race is now complete! The winner is ' + race.players[0].player + ' with a time of ' + msToTime(race.players[0].time).toString());
 			client.say(config.mainChannel, c.green('The race ' + race.raceGame + ' in channel ' + to + ' has finished!'));
 			client.say(config.mainChannel, 'The winner was ' + race.players[0].player + ' with a time of ' + msToTime(race.players[0].time).toString());
-
 		}
 
-		function isDone(element, index, array) {
-			return element.done;
+		function isDoneOrForfeited(player) {
+			if(player.done) {
+				return true;
+			} else if (player.forfeited) {
+				return true;
+			} else {
+				return false;
+			}
 		}
-	} else {
-		client.say(to, from + ': you are not in the race');
-	}
+
 //stop
 } else if (message.toUpperCase() == commands[5].toUpperCase()) {
 	if((from == race.raceOwner || isOp(from)) && race.inProgess) {
@@ -239,13 +261,17 @@ client.addListener('message', function (from, to, message) {
 		client.say(to, 'The current races are: ');
 		for(var i=0; i < races.length; i++) {
 			console.log(races, races[i].name);
-			client.say(to, 'Name: ' + races[i].name.toString() + ', goal: ' + races[i].goal.toString());
+			if(races[i].inProgress) {
+				client.say(to, 'Name: ' + races[i].name.toString() + ', goal: ' + races[i].goal.toString());
+			} else if (!races[i].inProgress) {
+				client.say(to, 'Not in progress: ' + races[i].name.toString() + ', goal: ' + races[i].goal.toString());
+			}
 		}
 	} else {
-		client.say(from, 'No current races!');
+		client.say(to, 'No current races!');
 	}
     //start
-} else if (message.toUpperCase() == commands[7].toUpperCase()) {
+} else if (message.toUpperCase() == commands[7].toUpperCase() && to !== config.mainChannel) {
 	if(from == race.raceOwner && race.players.length !== 0) {
 		function isReady(element, index, array) {
 			return element.ready;
@@ -257,6 +283,7 @@ client.addListener('message', function (from, to, message) {
 			startRace(client, race.name, race.players);
 			race.startTime = Date.now();
 			client.say(config.mainChannel, 'The race ' + race.raceGame + ' in channel ' + to + ' has begun!');			
+			saveRace(races);
 		} else {
 			client.say(to, 'Not all players are ready! Cannot start!');
 
@@ -307,12 +334,15 @@ client.addListener('message', function (from, to, message) {
 	if(to != config.mainChannel && race.inProgress) {
 		var finishedRacers = [];
 		var runningRacers = [];
+		var forfeitedRacers = [];
 		
 		race.players.forEach(function(e, i, a) {
 			if(e.done == true) {
 				finishedRacers.push(e.player + ' is done! Their time was ' + msToTime(e.time)  + ' and their comment is: ' + e.comment);
-			}  else {
-				runningRacers.push(e.player + 'is still running! Their current time is ' + msToTime((Date.now() - race.startTime)) + ' and their comment is: ' + e.comment);
+			} else if(e.forfeited == true) {
+				forfeitedRacers.push(e.player + ' has forfeited! Their time was ' + msToTime(e.time)  + ' and their comment is: ' + e.comment);
+			}else {
+				runningRacers.push(e.player + ' is still running! Their current time is ' + msToTime((Date.now() - race.startTime - 10000)) + ' and their comment is: ' + e.comment);
 			}
 		});
 		
@@ -322,6 +352,9 @@ client.addListener('message', function (from, to, message) {
 		});
 		runningRacers.forEach(function(e, i, a) {
 			client.say(to, e);
+		});
+		forfeitedRacers.forEach(function(e, i, a) {
+			client.say(to, c.red(e));
 		});
 	} else {
 		client.say(to, 'You are either not in the right channel or the race has not yet begun!');
@@ -350,7 +383,32 @@ client.addListener('message', function (from, to, message) {
   //forfeit
 }  else if (message.toUpperCase() == commands[17].toUpperCase()) {
 	if(typeof playerLocInArray == 'number') {
-		race.players.splice(playerLocInArray, 1);
+		race.players[playerLocInArray].forfeited = true;
+
+		if(race.players.every(isDoneOrForfeited)) {
+			race.inProgress = false;
+			race.players = sortByKey(race.players, 'time');
+			var winner = race.players[0];
+			if(winner.forfeited) {
+				race.players.splice(0, 1);
+				return;
+			}
+			client.say(to, 'The race is now complete! The winner is ' + race.players[0].player + ' with a time of ' + msToTime(race.players[0].time).toString());
+			client.say(config.mainChannel, c.green('The race ' + race.raceGame + ' in channel ' + to + ' has finished!'));
+			client.say(config.mainChannel, 'The winner was ' + race.players[0].player + ' with a time of ' + msToTime(race.players[0].time).toString());
+		}
+
+		function isDoneOrForfeited(player) {
+			if(player.done) {
+				return true;
+			} else if (player.forfeited) {
+				return true;
+			} else {
+				return false;
+			}
+		}
+
+		//race.players.splice(playerLocInArray, 1);
 		client.say(to, from + ' has forfeited the race!');
 	} else {
 		client.say(to, from + ': something went wrong');
@@ -366,19 +424,21 @@ client.addListener('message', function (from, to, message) {
 	race.inProgress = true;
 
 	startRace(client, race.name);
+	saveRace(races);
 	race.startTime = Date.now();	
    //comment
 }  else if (splitMessage.indexOf(commands[19]) > -1 && to !== config.mainChannel && race.startTime > 0) {
-	if(typeof playerLocInArray == 'number') {
+	if(race.players[playerLocInArray]) {
 		var commentString = splitMessage.splice(1, splitMessage.length).join(' ') + " ";
 		race.players[playerLocInArray].comment = commentString;
+		client.say(to, from + " has set a comment");
 	} else {
 		client.say(to, from + ': you cannot comment if you are not in the race');
 	}
 }
 //A debug command for printing out the races; to be removed in final versions (maybe just OPs?)
 else if (message == '.print') {
-	client.say(to, JSON.stringify(race.players));
+	client.say(to, JSON.stringify(races));
 }
 });
 
@@ -422,6 +482,23 @@ function startRace(client, channel, racers) {
 		}
 	}, 1000);
 }
+
+//In case a race isn't deleted, removed, etc
+function cleanup(client, index) {
+	for(var i=0; i < index; i++) {
+		sleep(3000);
+		var channel = '#' + config.nick + i;
+		client.join(channel);
+		client.addListener('names' + channel, function (nicks) { 
+			console.log(nicks);
+			if(nicks.length <= 1) {
+				//TODO: make this work
+				client.part(channel);
+			}
+		});
+	}
+}
+
 
 //For NickServ registration, as NickServ will identify the bot before it tries to join the channel.
 //TODO: fix this
