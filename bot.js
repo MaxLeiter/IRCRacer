@@ -7,7 +7,7 @@ var c = require('irc-colors');
 
 //Server, Nick, Password, Channel
 var commands = ['.help', '.startrace', '.join', '.unjoin', '.done', '.stop', '.races', '.start', '.ready', '.unready', '.setgoal', '.goal', '.owner', '.entrants', '.racers', '.reset', '.ops', '.forfeit', '.forcestart', '.comment'];
-var opCommands = ['.kick'];
+var opCommands = ['.kick', '.close'];
 var races = [];
 var games = [];
 var ops = [];
@@ -124,26 +124,32 @@ function readOPs(callback) {
 }
 
 
-client.on('part', function (channel, nick, reason, message) {
-	client.say(config.mainChannel, channel + '   ' + nick);
+client.addListener('part', function (channel, nick, reason, message) {
 		var id = find_in_array(races, 'name', channel);
 		var race = races[id];
 		var playerLocInArray = null;
-		console.log(race);
 		//If its a race
 		if(race !== undefined) {
 			//If there are players
 			if(typeof race.players != 'undefined' && race.players instanceof Array) {
-				console.log(race.players);
 				playerLocInArray = find_in_array(race.players, 'player', nick);
 				//If its not the main channel and the channel is a race channel; redundant?
 				if(race.name != config.mainChannel && channel.indexOf('#' + config.nick) > -1) {
-					client.say(channel, race.players[playerLocInArray].player + ' has been removed from the race');
+					if(typeof playerLocInArray == 'number') {
+						client.say(channel, race.players[playerLocInArray].player + ' has been removed from the race');
+					}
 					race.players.splice(playerLocInArray, 1);
+					sleep(3000);
+					var chan = client.chanData(channel);
+					if(Object.keys(chan.users).length-1 <= 1) {
+						client.part(channel, function() {
+							console.log('Left channel: ' + channel);
+							races.splice(id, 1);
+						});
+					}
 				}
 			} 
 		}
-
 });
 client.addListener('message', function (from, to, message) {
 	console.log(from + ' => ' + to + ': ' + message);
@@ -154,7 +160,6 @@ client.addListener('message', function (from, to, message) {
     var goal;
     var id = find_in_array(races, 'name', to);
     var race = races[id];
-
     var playerLocInArray = null;
     if(race !== undefined) {
     	if(typeof race.players != 'undefined' && race.players instanceof Array) {
@@ -181,21 +186,23 @@ client.addListener('message', function (from, to, message) {
     //join; check to be sure the race isn't in progress
 } else if (message.toUpperCase() == commands[2].toUpperCase() && to !== config.mainChannel) {
     	//If the message is in the home channel don't send
-    	if(!race.inProgress) {			
+    	if(races[id]) {		
+    		if(!race.inProgress) {
     		//If they aren't already in the race
-    		if(typeof playerLocInArray !== 'number') {
-    			race.players.push({ player: from,
-    				ready: false,
-    				time: 0,
-    				done: false,
-    				forfeit: false,
-    				comment: ''});
-    			client.say(to, from + " has joined the game! Type .ready to set your status!");
-    		} else {
-    			client.say(to, from + ": you are already in the race");
+    			if(typeof playerLocInArray !== 'number') {
+    				race.players.push({ player: from,
+    					ready: false,
+    					time: 0,
+    					done: false,
+    					forfeit: false,
+    					comment: ''});
+    				client.say(to, from + " has joined the game! Type .ready to set your status!");
+    			} else {
+    				client.say(to, from + ": you are already in the race");
+    			}
     		}
     	} else {
-    		client.say(to, 'You cannot join a game in the home channel, ' + from + '!');
+    		client.say(to, 'You cannot join a game in a channel that is not an active race, ' + from + '!');
     	} 
 
     //unjoin
@@ -374,6 +381,16 @@ client.addListener('message', function (from, to, message) {
 	} else {
 		client.say(to, from + ': you had either too many or too few arguments');
 	}
+  //close
+} else if (message.toUpperCase() == opCommands[1].toUpperCase()) {
+	if(to !== config.mainChannel) {
+		if(isOp(from) == true) {
+			console.log('Race to be spliced! The room ID is ' + id);
+			races.splice(id, 1);
+		}
+	} else {
+		client.say(to, 'You cannot close the main channel!');
+	}
   //ops
 } else if (message.toUpperCase() == commands[16].toUpperCase()) {
 	client.say(to, 'The current OPs are: ');
@@ -490,7 +507,7 @@ function cleanup(client, index) {
 		var channel = '#' + config.nick + i;
 		client.join(channel);
 		client.addListener('names' + channel, function (nicks) { 
-			console.log(nicks);
+			console.log(nicks.length);
 			if(nicks.length <= 1) {
 				//TODO: make this work
 				client.part(channel);
